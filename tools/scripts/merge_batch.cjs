@@ -5,9 +5,10 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const { findProjectRoot } = require("../lib/project-root");
+const { parseRawDiff } = require("../lib/git-raw-diff");
 const {
+  classifyChangeRecords,
   hasQualityChecklist,
-  normalizeRepoPath,
 } = require("../lib/workflow-contract");
 
 const REOPEN_COMMENT =
@@ -20,21 +21,33 @@ const BASE_BRANCH_MODIFIED_PATTERNS = [
 ];
 const REQUIRED_CHECKS = [
   ["pr-policy", ["pr-policy"]],
+  ["pr-evidence", ["pr-evidence"]],
   ["source-validation", ["source-validation"]],
   ["artifact-preview", ["artifact-preview"]],
 ];
 const SKILL_REVIEW_REQUIRED = ["review", "Skill Review & Optimize", "Skill Review & Optimize / review"];
+const MANUAL_REVIEW_REQUIRED = ["manual-review-required", "Skill Review / manual-review-required"];
+const MISSING_REVIEW_CREDENTIALS = ["missing-review-credentials", "Skill Review / missing-review-credentials"];
 const DISALLOWED_COAUTHOR_TRAILER_PATTERNS = [
   /<noreply@anthropic\.com>/i,
   /:\s*claude\b/i,
   /:\s*claude\s+sonnet\b/i,
 ];
+const FULL_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+const APPROVAL_WORKFLOW_PATHS = new Set([
+  ".github/workflows/actionlint.yml",
+  ".github/workflows/ci.yml",
+  ".github/workflows/codeql.yml",
+  ".github/workflows/dependency-review.yml",
+  ".github/workflows/skill-review.yml",
+]);
 
 function parseArgs(argv) {
   const args = {
     prs: null,
     pollSeconds: DEFAULT_POLL_SECONDS,
     dryRun: false,
+    reviewedHeads: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -47,6 +60,13 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
+    } else if (arg === "--reviewed-head") {
+      const reviewedHead = String(argv[index + 1] || "");
+      if (!FULL_SHA_PATTERN.test(reviewedHead)) {
+        throw new Error("--reviewed-head must be an exact 40-character lowercase commit SHA.");
+      }
+      args.reviewedHeads.push(reviewedHead);
+      index += 1;
     }
   }
 
@@ -55,6 +75,13 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function assertFullSha(value, label) {
+  if (!FULL_SHA_PATTERN.test(String(value || ""))) {
+    throw new Error(`${label} must be an exact 40-character lowercase commit SHA.`);
+  }
+  return value;
 }
 
 function readJson(filePath) {
@@ -105,6 +132,90 @@ function runCommand(command, args, cwd, options = {}) {
   }
 
   return options.capture ? result.stdout.trim() : "";
+}
+
+function runCommandBuffer(command, args, cwd, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: null,
+    input: options.input,
+    maxBuffer: options.maxBuffer || 64 * 1024 * 1024,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (typeof result.status !== "number" || result.status !== 0) {
+    const stderr = Buffer.isBuffer(result.stderr) ? result.stderr.toString("utf8").trim() : "";
+    throw new Error(stderr || `${command} ${args.join(" ")} failed with status ${result.status}`);
+  }
+  if (!Buffer.isBuffer(result.stdout)) {
+    throw new Error(`${command} did not return a raw byte buffer.`);
+  }
+  return result.stdout;
+}
+
+function fetchPullRequestObjects(projectRoot, baseOid, headOid, dependencies = {}) {
+  const execute = dependencies.runCommand || runCommand;
+  assertFullSha(baseOid, "Pull request base SHA");
+  assertFullSha(headOid, "Pull request head SHA");
+  execute(
+    "git",
+    ["fetch", "--no-tags", "--no-write-fetch-head", "origin", baseOid, headOid],
+    projectRoot,
+  );
+  execute("git", ["cat-file", "-e", `${baseOid}^{commit}`], projectRoot);
+  execute("git", ["cat-file", "-e", `${headOid}^{commit}`], projectRoot);
+}
+
+function readRawChangeRecords(projectRoot, baseOid, headOid, dependencies = {}) {
+  const executeBuffer = dependencies.runCommandBuffer || runCommandBuffer;
+  assertFullSha(baseOid, "Pull request base SHA");
+  assertFullSha(headOid, "Pull request head SHA");
+  const raw = executeBuffer(
+    "git",
+    ["diff", "--raw", "--no-abbrev", "-z", "-M", "--find-copies-harder", baseOid, headOid, "--"],
+    projectRoot,
+  );
+  return parseRawDiff(raw);
+}
+
+function resolveBlobSizes(projectRoot, records, dependencies = {}) {
+  const execute = dependencies.runCommand || runCommand;
+  const objectIds = [...new Set(records.flatMap((record) => [record.old_oid, record.new_oid]))]
+    .filter((oid) => FULL_SHA_PATTERN.test(String(oid || "")) && !/^0+$/u.test(oid));
+  if (!objectIds.length) {
+    throw new Error("Raw Git diff did not contain any materialized blob object IDs.");
+  }
+
+  const stdout = execute(
+    "git",
+    ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
+    projectRoot,
+    { capture: true, input: `${objectIds.join("\n")}\n` },
+  );
+  const sizes = new Map();
+  for (const line of String(stdout || "").split(/\r?\n/u).filter(Boolean)) {
+    const match = line.match(/^(?<oid>[0-9a-f]{40}) (?<type>\S+) (?<size>\d+)$/u);
+    if (!match?.groups || !objectIds.includes(match.groups.oid)) {
+      throw new Error(`Unexpected git cat-file response: ${line}`);
+    }
+    if (match.groups.type !== "blob") {
+      throw new Error(`Object ${match.groups.oid} is ${match.groups.type}, not a blob.`);
+    }
+    const size = Number(match.groups.size);
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new Error(`Object ${match.groups.oid} has an invalid size.`);
+    }
+    sizes.set(match.groups.oid, size);
+  }
+  for (const oid of objectIds) {
+    if (!sizes.has(oid)) {
+      throw new Error(`git cat-file did not return metadata for ${oid}.`);
+    }
+  }
+  return sizes;
 }
 
 function runGhJson(projectRoot, args, options = {}) {
@@ -249,6 +360,7 @@ function loadPullRequestDetails(projectRoot, repoSlug, prNumber) {
   const details = runGhJson(projectRoot, ["pr", "view", String(prNumber)], {
     jsonFields: [
       "body",
+      "baseRefOid",
       "mergeStateStatus",
       "mergeable",
       "number",
@@ -257,33 +369,28 @@ function loadPullRequestDetails(projectRoot, repoSlug, prNumber) {
       "url",
     ].join(","),
   });
-
-  const filesPayload = runGhApiJson(projectRoot, [
-    `repos/${repoSlug}/pulls/${prNumber}/files?per_page=100`,
-  ], {
-    paginate: true,
-    slurp: true,
-  });
-
-  const files = flattenGhSlurpPayload(filesPayload)
-    .map((entry) => normalizeRepoPath(entry?.filename))
-    .filter(Boolean);
-
-  return {
-    ...details,
-    files,
-    hasSkillChanges: files.some((filePath) => filePath.endsWith("/SKILL.md") || filePath === "SKILL.md"),
-  };
+  return details;
 }
 
 function needsBodyRefresh(prDetails) {
   return !hasQualityChecklist(prDetails.body);
 }
 
-function getRequiredCheckAliases(prDetails) {
+function getRequiredCheckAliases(prDetails, options = {}) {
   const aliases = REQUIRED_CHECKS.map(([, value]) => value);
   if (prDetails.hasSkillChanges) {
-    aliases.push(SKILL_REVIEW_REQUIRED);
+    aliases.push({
+      label: "review",
+      aliases: SKILL_REVIEW_REQUIRED,
+      acceptedConclusions: ["success"],
+      blockingAliases: MISSING_REVIEW_CREDENTIALS,
+      alternatives: options.allowManualReview
+        ? [{
+            aliases: MANUAL_REVIEW_REQUIRED,
+            acceptedConclusions: ["success"],
+          }]
+        : [],
+    });
   }
   return aliases;
 }
@@ -325,32 +432,112 @@ function checkRunMatchesAliases(checkRun, aliases) {
   return aliases.some((alias) => name === alias || name.endsWith(` / ${alias}`));
 }
 
+function normalizeRequiredCheckSpec(requiredCheck) {
+  if (Array.isArray(requiredCheck)) {
+    return {
+      label: requiredCheck[0],
+      aliases: requiredCheck,
+      acceptedConclusions: ["success"],
+      alternatives: [],
+      blockingAliases: [],
+    };
+  }
+  if (!requiredCheck || typeof requiredCheck !== "object" || !Array.isArray(requiredCheck.aliases)) {
+    throw new Error("Required check specification is malformed.");
+  }
+  return {
+    label: String(requiredCheck.label || requiredCheck.aliases[0] || "check"),
+    aliases: requiredCheck.aliases,
+    acceptedConclusions: requiredCheck.acceptedConclusions || ["success"],
+    alternatives: Array.isArray(requiredCheck.alternatives) ? requiredCheck.alternatives : [],
+    blockingAliases: Array.isArray(requiredCheck.blockingAliases) ? requiredCheck.blockingAliases : [],
+  };
+}
+
+function summarizeCheckCandidate(latestRuns, aliases, acceptedConclusions) {
+  const candidates = latestRuns.filter((run) => checkRunMatchesAliases(run, aliases));
+  if (!candidates.length) {
+    return { state: "missing", conclusion: null, run: null };
+  }
+
+  const successful = candidates.find((run) => (
+    String(run?.status || "").toLowerCase() === "completed" &&
+    acceptedConclusions.includes(String(run?.conclusion || "").toLowerCase())
+  ));
+  if (successful) {
+    return {
+      state: "success",
+      conclusion: String(successful.conclusion || "").toLowerCase(),
+      run: successful,
+    };
+  }
+
+  const pending = candidates.find((run) => String(run?.status || "").toLowerCase() !== "completed");
+  if (pending) {
+    return {
+      state: "pending",
+      conclusion: String(pending.conclusion || "").toLowerCase(),
+      run: pending,
+    };
+  }
+
+  const failed = candidates.find((run) => {
+    const conclusion = String(run?.conclusion || "").toLowerCase();
+    return conclusion && conclusion !== "skipped";
+  });
+  if (failed) {
+    return {
+      state: "failed",
+      conclusion: String(failed.conclusion || "").toLowerCase(),
+      run: failed,
+    };
+  }
+
+  return {
+    state: "missing",
+    conclusion: "skipped",
+    run: candidates[0],
+  };
+}
+
 function summarizeRequiredCheckRuns(checkRuns, requiredAliases) {
   const latestByName = selectLatestCheckRuns(checkRuns);
   const summaries = [];
 
-  for (const aliases of requiredAliases) {
-    const latestRun = [...latestByName.values()].find((run) => checkRunMatchesAliases(run, aliases));
-    const label = aliases[0];
-
-    if (!latestRun) {
-      summaries.push({ label, state: "missing", conclusion: null, run: null });
+  const latestRuns = [...latestByName.values()];
+  for (const requiredCheck of requiredAliases) {
+    const spec = normalizeRequiredCheckSpec(requiredCheck);
+    const blocker = summarizeCheckCandidate(latestRuns, spec.blockingAliases, []);
+    if (blocker.state === "failed" || blocker.state === "pending") {
+      summaries.push({ label: spec.label, ...blocker });
+      continue;
+    }
+    const primary = summarizeCheckCandidate(latestRuns, spec.aliases, spec.acceptedConclusions);
+    if (primary.state === "success" || primary.state === "failed" || primary.state === "pending") {
+      summaries.push({ label: spec.label, ...primary });
       continue;
     }
 
-    const status = String(latestRun.status || "").toLowerCase();
-    const conclusion = String(latestRun.conclusion || "").toLowerCase();
-    if (status !== "completed") {
-      summaries.push({ label, state: "pending", conclusion, run: latestRun });
-      continue;
+    let alternativeSummary = null;
+    for (const alternative of spec.alternatives) {
+      const candidate = summarizeCheckCandidate(
+        latestRuns,
+        alternative.aliases || [],
+        alternative.acceptedConclusions || ["success"],
+      );
+      if (candidate.state === "success") {
+        alternativeSummary = candidate;
+        break;
+      }
+      if (!alternativeSummary || candidate.state === "pending" || candidate.state === "failed") {
+        alternativeSummary = candidate;
+      }
     }
-
-    if (["success", "neutral", "skipped"].includes(conclusion)) {
-      summaries.push({ label, state: "success", conclusion, run: latestRun });
-      continue;
+    if (!spec.alternatives.length && primary.conclusion === "skipped") {
+      summaries.push({ label: spec.label, ...primary, state: "failed" });
+    } else {
+      summaries.push({ label: spec.label, ...(alternativeSummary || primary) });
     }
-
-    summaries.push({ label, state: "failed", conclusion, run: latestRun });
   }
 
   return summaries;
@@ -400,16 +587,147 @@ function listActionRequiredRuns(projectRoot, repoSlug, headSha) {
   });
 }
 
-function approveActionRequiredRuns(projectRoot, repoSlug, headSha) {
-  const runs = listActionRequiredRuns(projectRoot, repoSlug, headSha);
+function listWorkflowDefinitions(projectRoot, repoSlug) {
+  const payload = runGhApiJson(projectRoot, [
+    `repos/${repoSlug}/actions/workflows?per_page=100`,
+  ]);
+  return Array.isArray(payload?.workflows) ? payload.workflows : [];
+}
+
+function validateActionRequiredRuns(
+  runs,
+  workflows,
+  prNumber,
+  headSha,
+  allowedWorkflowPaths = APPROVAL_WORKFLOW_PATHS,
+) {
+  const workflowById = new Map(
+    workflows
+      .filter((workflow) => Number.isInteger(Number(workflow?.id)))
+      .map((workflow) => [Number(workflow.id), workflow]),
+  );
+  const validated = [];
+
   for (const run of runs) {
-    runCommand(
-      "gh",
-      ["api", "-X", "POST", `repos/${repoSlug}/actions/runs/${run.id}/approve`],
-      projectRoot,
+    const runId = Number(run?.id);
+    const workflowId = Number(run?.workflow_id);
+    const runPath = typeof run?.path === "string" ? run.path : "";
+    const workflow = workflowById.get(workflowId);
+    const prNumbers = Array.isArray(run?.pull_requests)
+      ? run.pull_requests.map((entry) => Number(entry?.number)).filter(Number.isInteger)
+      : [];
+    const reasons = [];
+
+    if (!Number.isInteger(runId) || runId <= 0) {
+      reasons.push("missing run ID");
+    }
+    if (!workflow || !Number.isInteger(workflowId)) {
+      reasons.push("workflow ID is not present in the trusted workflow inventory");
+    }
+    if (!allowedWorkflowPaths.has(runPath)) {
+      reasons.push(`workflow path ${runPath || "<missing>"} is not allowlisted`);
+    }
+    if (workflow && (workflow.path !== runPath || !allowedWorkflowPaths.has(workflow.path))) {
+      reasons.push("workflow ID/path mapping does not match the allowlist");
+    }
+    if (workflow && workflow.state !== "active") {
+      reasons.push(`workflow is not active (${workflow.state || "missing state"})`);
+    }
+    if (run?.event !== "pull_request") {
+      reasons.push(`event is ${run?.event || "missing"}, not pull_request`);
+    }
+    if (run?.head_sha !== headSha) {
+      reasons.push("head SHA does not match the captured pull request head");
+    }
+    if (!prNumbers.includes(prNumber)) {
+      reasons.push(`pull request metadata does not contain #${prNumber}`);
+    }
+    if (reasons.length) {
+      throw new Error(`Refusing workflow run ${runId || "<unknown>"}: ${reasons.join("; ")}.`);
+    }
+    validated.push(run);
+  }
+
+  return validated;
+}
+
+function approveWorkflowRun(projectRoot, repoSlug, run) {
+  runCommand(
+    "gh",
+    ["api", "-X", "POST", `repos/${repoSlug}/actions/runs/${run.id}/approve`],
+    projectRoot,
+  );
+}
+
+function assertUnchangedHead(actual, expected, phase, prNumber) {
+  assertFullSha(actual, `PR #${prNumber} ${phase} head SHA`);
+  if (actual !== expected) {
+    throw new Error(
+      `PR #${prNumber} head changed ${phase}: expected ${expected}, received ${actual}. Rerun merge:batch and review the new head.`,
     );
   }
-  return runs;
+}
+
+function approveActionRequiredRuns(projectRoot, repoSlug, prDetails, options = {}) {
+  const prNumber = Number(prDetails?.number);
+  const baseOid = assertFullSha(prDetails?.baseRefOid, `PR #${prNumber} base SHA`);
+  const headOid = assertFullSha(prDetails?.headRefOid, `PR #${prNumber} head SHA`);
+  const dependencies = options.dependencies || {};
+  const fetchObjects = dependencies.fetchPullRequestObjects || fetchPullRequestObjects;
+  const readRecords = dependencies.readRawChangeRecords || readRawChangeRecords;
+  const getSizes = dependencies.resolveBlobSizes || resolveBlobSizes;
+  const classifyRecords = dependencies.classifyChangeRecords || classifyChangeRecords;
+  const getCurrentHead = dependencies.getHeadSha || getHeadSha;
+  const getRuns = dependencies.listActionRequiredRuns || listActionRequiredRuns;
+  const getWorkflows = dependencies.listWorkflowDefinitions || listWorkflowDefinitions;
+  const approveRun = dependencies.approveWorkflowRun || approveWorkflowRun;
+
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error("Pull request number is required for workflow approval.");
+  }
+
+  fetchObjects(projectRoot, baseOid, headOid, dependencies);
+  const records = readRecords(projectRoot, baseOid, headOid, dependencies);
+  const blobSizes = getSizes(projectRoot, records, dependencies);
+  const policy = classifyRecords(records, { blobSizes });
+  if (!policy?.approvalSafe) {
+    const reasons = Array.isArray(policy?.reasons) && policy.reasons.length
+      ? policy.reasons.slice(0, 12).join(", ")
+      : "unclassified local diff";
+    throw new Error(`PR #${prNumber} local base-to-head diff is not fork-approval-safe: ${reasons}.`);
+  }
+
+  const reviewedHeads = new Set(options.reviewedHeads || []);
+  if (policy.requiresHumanReview && !reviewedHeads.has(headOid)) {
+    throw new Error(
+      `PR #${prNumber} changes canonical skill content. Re-run with --reviewed-head ${headOid} after reviewing that exact full SHA.`,
+    );
+  }
+
+  const workflows = getWorkflows(projectRoot, repoSlug);
+  const runs = getRuns(projectRoot, repoSlug, headOid);
+  const validatedRuns = validateActionRequiredRuns(
+    runs,
+    workflows,
+    prNumber,
+    headOid,
+    options.allowedWorkflowPaths || APPROVAL_WORKFLOW_PATHS,
+  );
+
+  assertUnchangedHead(getCurrentHead(projectRoot, repoSlug, prNumber), headOid, "before approvals", prNumber);
+  if (!options.dryRun) {
+    for (const run of validatedRuns) {
+      approveRun(projectRoot, repoSlug, run);
+    }
+  }
+  assertUnchangedHead(getCurrentHead(projectRoot, repoSlug, prNumber), headOid, "after approvals", prNumber);
+
+  return {
+    records,
+    policy,
+    runs: validatedRuns,
+    approvedRuns: options.dryRun ? [] : validatedRuns,
+  };
 }
 
 function listCheckRuns(projectRoot, repoSlug, headSha) {
@@ -538,15 +856,27 @@ async function mergePullRequest(projectRoot, repoSlug, prNumber, options) {
     prDetails = loadPullRequestDetails(projectRoot, repoSlug, prNumber);
   }
 
-  const headSha = getHeadSha(projectRoot, repoSlug, prNumber);
-  const approvedRuns = options.dryRun ? [] : approveActionRequiredRuns(projectRoot, repoSlug, headSha);
+  const approval = approveActionRequiredRuns(projectRoot, repoSlug, prDetails, {
+    dryRun: options.dryRun,
+    reviewedHeads: options.reviewedHeads,
+    dependencies: options.approvalDependencies,
+  });
+  const headSha = prDetails.headRefOid;
+  const approvedRuns = approval.approvedRuns;
+  // The Skill Review workflow is path-filtered to SKILL.md. Supporting skill
+  // content still requires exact-head human attestation, but has no review
+  // check run to wait for.
+  prDetails.hasSkillChanges = approval.policy.canonicalSkillChanges.length > 0;
   if (approvedRuns.length) {
     console.log(
       `[merge-batch] PR #${prNumber}: approved ${approvedRuns.length} fork run(s) waiting on action_required.`,
     );
   }
 
-  const requiredCheckAliases = getRequiredCheckAliases(prDetails);
+  const requiredCheckAliases = getRequiredCheckAliases(prDetails, {
+    allowManualReview: approval.policy.requiresHumanReview &&
+      new Set(options.reviewedHeads || []).has(headSha),
+  });
   if (!options.dryRun) {
     await waitForRequiredChecks(projectRoot, repoSlug, headSha, requiredCheckAliases, options.pollSeconds);
   }
@@ -577,6 +907,8 @@ async function mergePullRequest(projectRoot, repoSlug, prNumber, options) {
             buildSquashMergeSubject(prDetails),
             "--body",
             buildSquashMergeBody(prDetails),
+            "--match-head-commit",
+            headSha,
           ],
           projectRoot,
         );
@@ -593,6 +925,11 @@ async function mergePullRequest(projectRoot, repoSlug, prNumber, options) {
       gitPullMain(projectRoot);
       prDetails = loadPullRequestDetails(projectRoot, repoSlug, prNumber);
       const refreshedSha = prDetails.headRefOid || headSha;
+      if (refreshedSha !== headSha) {
+        throw new Error(
+          `PR #${prNumber} head changed during merge retry. Rerun merge:batch and review ${refreshedSha}.`,
+        );
+      }
       if (!options.dryRun) {
         await waitForRequiredChecks(projectRoot, repoSlug, refreshedSha, requiredCheckAliases, options.pollSeconds);
       }
@@ -649,6 +986,7 @@ async function main() {
   const results = await runBatch(projectRoot, prNumbers, {
     dryRun: args.dryRun,
     pollSeconds: args.pollSeconds,
+    reviewedHeads: args.reviewedHeads,
   });
 
   console.log(
@@ -664,7 +1002,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  approvalWorkflowPaths: APPROVAL_WORKFLOW_PATHS,
   approveActionRequiredRuns,
+  approveWorkflowRun,
+  assertFullSha,
   baseBranchModifiedPatterns: BASE_BRANCH_MODIFIED_PATTERNS,
   buildSquashMergeBody,
   buildSquashMergeSubject,
@@ -675,12 +1016,14 @@ module.exports = {
   extractSummaryBlock,
   extractTemplateSections,
   formatCheckSummary,
+  fetchPullRequestObjects,
   getRequiredCheckAliases,
   gitCheckoutMain,
   gitPullMain,
   isRetryableMergeError,
   listActionRequiredRuns,
   listCheckRuns,
+  listWorkflowDefinitions,
   loadPullRequestDetails,
   loadPullRequestTemplate,
   mergePullRequest,
@@ -688,11 +1031,16 @@ module.exports = {
   normalizePrBody,
   parseArgs,
   parsePrList,
+  parseRawDiff,
+  readRawChangeRecords,
   readRepositorySlug,
   runCommand,
+  runCommandBuffer,
   runBatch,
   selectLatestCheckRuns,
   stripDisallowedCoauthorTrailers,
   summarizeRequiredCheckRuns,
+  validateActionRequiredRuns,
   waitForRequiredChecks,
+  resolveBlobSizes,
 };

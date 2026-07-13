@@ -176,9 +176,13 @@ This happens regularly on community PRs from forks. The common symptoms are:
 
 Use this playbook:
 
-1.  **Approve waiting fork runs** using the run id(s) from `gh run list`:
+1.  **Use the guarded maintainer command, never a raw run-approval API call.** It recomputes the complete base-to-head diff from exact Git objects, rejects unsafe paths/modes/types, validates workflow identity and PR metadata, and checks the head SHA again around approval:
     ```bash
-    gh api -X POST repos/<OWNER>/<REPO>/actions/runs/<RUN_ID>/approve
+    npm run merge:batch -- --prs <PR_NUMBER> --dry-run
+    ```
+    If canonical `SKILL.md` or its allowlisted supporting assets/references/resources changed, review the exact full head SHA shown by the command and supply it to the real run:
+    ```bash
+    npm run merge:batch -- --prs <PR_NUMBER> --reviewed-head <40-character-head-sha>
     ```
 2.  **Normalize the PR body** so it includes the repository template's `## Quality Bar Checklist ✅` section. If `gh pr edit` works, use it. If `gh pr edit` fails with the GraphQL `projectCards` / Projects Classic deprecation error, patch the PR body through the REST API instead:
     ```bash
@@ -190,8 +194,8 @@ Use this playbook:
     gh pr close <PR_NUMBER> --comment "Maintainer workflow refresh: closing and reopening to retrigger pull_request checks against the updated PR body."
     gh pr reopen <PR_NUMBER>
     ```
-5.  **Approve the newly created fork runs** after reopen. They will usually appear as a fresh pair of `action_required` runs for `Skills Registry CI` and `Skill Review`.
-6.  **Wait for the new checks only.** You may see older failed `pr-policy` runs in the rollup alongside newer green runs. Merge only after the fresh run set for the current PR state is fully green: `pr-policy`, `source-validation`, `artifact-preview`, and `review` when `SKILL.md` changed. `source-validation` now enforces the frozen warning budget and README source-credit coverage for changed skills, so missing `## When to Use` sections, missing README repo credits, or other new warning drift must be fixed before merge.
+5.  **Let `merge:batch` validate and approve newly created fork runs** after reopen. Do not approve them directly by run ID; the command binds every approval to the current PR, exact head SHA, allowlisted workflow, and locally recomputed diff.
+6.  **Wait for the new checks only.** You may see older failed `pr-policy` runs in the rollup alongside newer green runs. Merge only after the fresh run set for the current PR state is fully green: `pr-policy`, `pr-evidence`, `source-validation`, `artifact-preview`, and a truthful skill-review outcome when `SKILL.md` changed. `review` means semantic review actually ran. `manual-review-required` means it did not run and requires the exact-SHA maintainer attestation above. `source-validation` enforces the frozen warning budget and README source-credit coverage for changed skills, so missing `## When to Use` sections, missing README repo credits, or other new warning drift must be fixed before merge.
 7.  **If `gh pr merge` says `Base branch was modified`**, refresh the PR state and retry. This is normal when you are merging a batch and `main` moved between attempts.
 
 **If a PR was closed after local integration (reopen and merge):**

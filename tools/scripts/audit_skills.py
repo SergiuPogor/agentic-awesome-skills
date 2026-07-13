@@ -72,22 +72,46 @@ def has_limitations(content: str) -> bool:
     return any(pattern.search(content) for pattern in LIMITATIONS_HEADING_PATTERNS)
 
 
-def find_dangling_links(content: str, skill_root: Path) -> list[str]:
+def find_dangling_links(
+    content: str,
+    skill_root: Path,
+    snapshot_root: Path | None = None,
+) -> list[str]:
+    """Return missing or escaping local links without consulting host paths.
+
+    ``snapshot_root`` is the trust boundary. A link that escapes it is broken
+    even when the destination happens to exist on the machine running the
+    audit.
+    """
     broken_links: list[str] = []
+    containment_root = (snapshot_root or skill_root).resolve()
     for link in MARKDOWN_LINK_PATTERN.findall(content):
         link_clean = link.split("#", 1)[0].strip()
-        if not link_clean or link_clean.startswith(("http://", "https://", "mailto:", "<", ">")):
+        if link_clean.startswith("<") and link_clean.endswith(">"):
+            link_clean = link_clean[1:-1].strip()
+        if not link_clean or link_clean.startswith(("http://", "https://", "mailto:")):
             continue
         if os.path.isabs(link_clean):
+            broken_links.append(link)
             continue
 
         target_path = (skill_root / link_clean).resolve()
+        try:
+            target_path.relative_to(containment_root)
+        except ValueError:
+            broken_links.append(link)
+            continue
         if not target_path.exists():
             broken_links.append(link)
     return broken_links
 
 
-def build_skill_report(skill_root: Path, skills_dir: Path) -> dict[str, object]:
+def build_skill_report(
+    skill_root: Path,
+    skills_dir: Path,
+    *,
+    snapshot_root: Path | None = None,
+) -> dict[str, object]:
     skill_file = skill_root / "SKILL.md"
     rel_dir = skill_root.relative_to(skills_dir).as_posix()
     rel_file = f"{rel_dir}/SKILL.md"
@@ -166,7 +190,7 @@ def build_skill_report(skill_root: Path, skills_dir: Path) -> dict[str, object]:
 
     if risk is None:
         findings.append(Finding("warning", "missing_risk", "Missing risk classification."))
-    elif risk not in VALID_RISK_LEVELS:
+    elif not isinstance(risk, str) or risk not in VALID_RISK_LEVELS:
         findings.append(
             Finding(
                 "error",
@@ -217,7 +241,7 @@ def build_skill_report(skill_root: Path, skills_dir: Path) -> dict[str, object]:
             )
         )
 
-    for broken_link in find_dangling_links(content, skill_root):
+    for broken_link in find_dangling_links(content, skill_root, snapshot_root):
         findings.append(
             Finding(
                 "error",
@@ -286,7 +310,13 @@ def audit_skills(skills_dir: str | Path) -> dict[str, object]:
         dirs[:] = [directory for directory in dirs if not directory.startswith(".")]
         if "SKILL.md" not in files:
             continue
-        reports.append(build_skill_report(safe_user_path(root, skills_root), skills_root))
+        reports.append(
+            build_skill_report(
+                safe_user_path(root, skills_root),
+                skills_root,
+                snapshot_root=skills_root.parent,
+            )
+        )
 
     reports.sort(key=lambda report: str(report["id"]).lower())
 

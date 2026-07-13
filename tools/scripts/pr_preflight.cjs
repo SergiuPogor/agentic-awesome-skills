@@ -6,6 +6,7 @@ const { spawnSync } = require("child_process");
 const sanitizeFilename = require("sanitize-filename");
 
 const { findProjectRoot } = require("../lib/project-root");
+const { parseRawDiff } = require("../lib/git-raw-diff");
 const {
   classifyChangedFiles,
   getDirectDerivedChanges,
@@ -126,17 +127,40 @@ function resolveBaseRef(projectRoot) {
   return "HEAD";
 }
 
-function getChangedFiles(projectRoot, baseRef, headRef) {
+function getChangeRecords(projectRoot, baseRef, headRef) {
   if (baseRef === headRef) {
     return [];
   }
 
-  const diffOutput = runGit(["diff", "--name-only", `${baseRef}...${headRef}`], {
-    cwd: projectRoot,
-    capture: true,
-  });
+  const result = spawnSync(
+    "git",
+    ["diff", "--raw", "--no-abbrev", "-z", "-M", "--find-copies-harder", `${baseRef}...${headRef}`, "--"],
+    {
+      cwd: projectRoot,
+      encoding: null,
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  if (result.error) throw result.error;
+  if (typeof result.status !== "number" || result.status !== 0) {
+    const stderr = Buffer.isBuffer(result.stderr) ? result.stderr.toString("utf8").trim() : "";
+    throw new Error(stderr || `git diff failed with status ${result.status}`);
+  }
+  return parseRawDiff(result.stdout, { allowEmpty: true });
+}
 
-  return [...new Set(diffOutput.split(/\r?\n/).map(normalizeRepoPath).filter(Boolean))];
+function getChangedFiles(projectRoot, baseRef, headRef) {
+  const records = getChangeRecords(projectRoot, baseRef, headRef);
+  return [...new Set(records.flatMap((record) => [record.old_path, record.new_path])
+    .filter(Boolean)
+    .map(normalizeRepoPath))];
+}
+
+function changedFilesFromRecords(records) {
+  return [...new Set(records.flatMap((record) => [record.old_path, record.new_path])
+    .filter(Boolean)
+    .map(normalizeRepoPath))];
 }
 
 function loadPullRequestBody(eventPath) {
@@ -202,7 +226,8 @@ function main() {
   const projectRoot = findProjectRoot(__dirname);
   const contract = loadWorkflowContract(__dirname);
   const baseRef = args.base || resolveBaseRef(projectRoot);
-  const changedFiles = getChangedFiles(projectRoot, baseRef, args.head);
+  const changeRecords = getChangeRecords(projectRoot, baseRef, args.head);
+  const changedFiles = changedFilesFromRecords(changeRecords);
   const classification = classifyChangedFiles(changedFiles, contract);
   const directDerivedChanges = getDirectDerivedChanges(changedFiles, contract);
   const pullRequestBody = loadPullRequestBody(args.eventPath);
@@ -210,6 +235,7 @@ function main() {
   const result = {
     baseRef,
     headRef: args.head,
+    changeRecords,
     changedFiles,
     categories: classification.categories,
     primaryCategory: classification.primaryCategory,
@@ -269,4 +295,8 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { changedFilesFromRecords, getChangeRecords, getChangedFiles, parseArgs };

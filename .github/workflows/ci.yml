@@ -69,7 +69,7 @@ jobs:
   source-validation:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    needs: pr-policy
+    needs: [pr-policy, pr-evidence]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
@@ -130,6 +130,92 @@ jobs:
 
       - name: Run docs security checks
         run: npm run security:docs
+
+  pr-evidence:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: pr-policy
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.10"
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "lts/*"
+
+      - name: Install trusted dependencies
+        run: |
+          pip install -r tools/requirements.txt
+          npm ci --ignore-scripts
+
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Generate PR intake JSON
+        run: |
+          mkdir -p .tmp/pr-evidence
+          node tools/scripts/pr_preflight.cjs \
+            --base "origin/${{ github.base_ref }}" \
+            --head HEAD \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --no-run \
+            --json > .tmp/pr-evidence/preflight.json
+
+      - name: Generate changed-skill evidence
+        id: changed_skill_evidence
+        continue-on-error: true
+        run: |
+          node tools/scripts/run-python.js tools/scripts/changed_skill_evidence.py \
+            --base "origin/${{ github.base_ref }}" \
+            --head HEAD \
+            --output .tmp/pr-evidence/changed-skills.json
+
+      - name: Resolve advisory semantic-review state
+        id: semantic_review
+        env:
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then
+            echo "state=unavailable" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=unknown" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate shadow decision manifest
+        id: decision_manifest
+        if: always() && hashFiles('.tmp/pr-evidence/changed-skills.json') != ''
+        run: |
+          node tools/scripts/pr_decision_manifest.cjs \
+            --preflight .tmp/pr-evidence/preflight.json \
+            --evidence .tmp/pr-evidence/changed-skills.json \
+            --semantic-review-state "${{ steps.semantic_review.outputs.state }}" \
+            --output .tmp/pr-evidence/decision-manifest.json \
+            --write-github-output \
+            --write-step-summary
+
+      - name: Upload advisory evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-evidence-${{ github.event.pull_request.number }}
+          path: .tmp/pr-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce deterministic changed-skill gate
+        if: steps.changed_skill_evidence.outcome == 'failure'
+        run: |
+          echo "Changed-skill evidence reported a blocking regression or operational failure."
+          exit 1
 
   artifact-preview:
     if: github.event_name == 'pull_request'

@@ -17,13 +17,22 @@ npm run merge:batch -- --prs 450,449,446,451
 
 Add `--poll-seconds <n>` if you want a slower or faster status loop while checks settle.
 
+If a PR changes canonical `SKILL.md` content or its allowlisted supporting assets/references/resources, first review the exact current head commit, then attest to that immutable revision:
+
+```bash
+npm run merge:batch -- --prs 450 --reviewed-head <40-character-head-sha>
+```
+
+Use `--dry-run` to exercise local classification without approving a run or merging. An abbreviated or stale attestation is rejected.
+
 ## Happy Path
 
 `merge:batch` will:
 
 - refresh the PR body when the Quality Bar checklist is missing
 - close and reopen the PR if stale metadata needs a fresh `pull_request` event
-- approve fork runs waiting on `action_required`
+- fetch the exact base/head objects and classify the complete raw Git diff
+- approve fork runs waiting on `action_required` only when every path, mode, object, size, and workflow identity is allowlisted
 - wait for the fresh required checks on the current head SHA
 - merge with GitHub squash merge
 - pull `main`, run `sync:contributors`, and push a README-only follow-up if needed
@@ -40,6 +49,7 @@ Add `--poll-seconds <n>` if you want a slower or faster status loop while checks
 
 - conflict resolution on the PR branch
 - manual judgment for risky skill changes
+- semantic review when the distinct `manual-review-required` check is present
 - README community-source audits when the source metadata is ambiguous
 - fork-only edge cases that require contributor coordination outside GitHub permissions
 
@@ -50,6 +60,8 @@ Stop and switch to the manual playbook when:
 - the PR is `CONFLICTING`
 - `merge:batch` reports a check failure that needs source changes, not maintainer automation
 - the PR needs a manual README credits decision
+- the local diff contains a symlink, gitlink, executable mode, unknown path/type, oversized blob, or other non-allowlisted change
+- the workflow run cannot be bound to the intended PR number, current head SHA, `pull_request` event, and trusted workflow definition
 - fork approval or branch permissions are missing
 
 In those cases, follow [Merging Pull Requests](merging-prs.md) and the relevant sections in [MAINTENANCE.md](../../.github/MAINTENANCE.md).
