@@ -683,6 +683,7 @@ Key source families include:
 - **[kimtth/agent-pptify-kit](https://github.com/kimtth/agent-pptify-kit)**: Source for the `pptx-deck-creation` skill - editable, production-ready PowerPoint deck creation with narrative planning, explicit layouts, asset guidance, and quality checks (MIT).
 - **[Optim-Agent/optim-agent](https://github.com/Optim-Agent/optim-agent)**: Source for the `optim-agent` skill - agent-guided optimization of configurable systems against measurable objectives (MIT).
 - **[thecsdoctor/brendangregg-use-tsa-skill](https://github.com/thecsdoctor/brendangregg-use-tsa-skill)**: Source for the `brendangregg-use-tsa` skill - methodical performance troubleshooting and root-cause analysis with Brendan Gregg's USE and TSA methods, plus evidence-backed RCA and postmortem reporting (MIT).
+- **[AntonioCardenas/generate-nanobanana](https://github.com/AntonioCardenas/generate-nanobanana)**: Source for the `generate-nanobanana` skill - image and video generation via Google's Gemini media models (Nano Banana 2 Lite/Standard/Pro, Gemini Omni Flash) with cost-approval gates before paid runs, real reference-image support, and a prompt/seed log beside every output (MIT).
 - **[alfredtech2026/shopify-app-review-brief](https://github.com/alfredtech2026/shopify-app-review-brief)**: Source for the `shopify-review-triage` skill - public-data-only P0–P3 triage of low-star Shopify App Store reviews into a source-linked brief, with an explicit needs-human-read bucket and first-pass vs. human-checked labeling (MIT).
 
 </details>
