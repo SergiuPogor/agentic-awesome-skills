@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Reject symlinked flagship bundle asset sources before validating or copying
+  them into distributable plugin packages.
 - Removed mutable upstream demo guidance from `unified-ai-gateway`; all demos
   now remain inside its reviewed, digest-pinned image procedure.
 
