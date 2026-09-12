@@ -520,6 +520,7 @@ Key source families include:
 ### Community Contributors
 
 - **[Pranav-Nexus/antigravity-skill-porter](https://github.com/Pranav-Nexus/antigravity-skill-porter)**: MIT source for `skill-porter`, adapted for conservative local bundle previews and complete support-file copying.
+- **[70v-Yoyo/md2video-audio-skill](https://github.com/70v-Yoyo/md2video-audio-skill)**: Apache-2.0 community source for `md2video-audio`, converting Markdown into narrated MP4 video with synchronized slides and narration.
 - **[onkarbadve/agy-auto](https://github.com/onkarbadve/agy-auto)**: MIT community source for `agy-auto`, providing guarded Antigravity CLI permission automation with scoped approvals.
 
 - **[twoicewoo/awesome-copilot](https://github.com/twoicewoo/awesome-copilot/tree/886bf799bb05501bfd1afa7aae9cc5a77dedb03e/skills/break-ai-fix-loops)**: Pinned MIT source for the `break-ai-fix-loops` skill - bounded AI repair loops with stable failure fingerprints, real-path proof, negative controls, and rollback verification (MIT).
