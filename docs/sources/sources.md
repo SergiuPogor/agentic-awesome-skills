@@ -191,6 +191,9 @@ The following 19 skills were adapted for [FrancoStino/opencode-skills-collection
 | `i-have-adhd` | [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) | MIT | ADHD-friendly output shaping (`/i-have-adhd` toggle). |
 | `career-ops` | [career-ops-hq/career-ops](https://github.com/career-ops-hq/career-ops) | MIT | Multi-CLI job-search command center; Node runtime not bundled. |
 | `geo-audit`, `geo-brand-mentions`, `geo-citability`, `geo-compare`, `geo-content`, `geo-crawlers`, `geo-llmstxt`, `geo-platform-optimizer`, `geo-proposal`, `geo-prospect`, `geo-report`, `geo-report-pdf`, `geo-schema`, `geo-technical` | [zubair-trabzada/geo-seo-claude](https://github.com/zubair-trabzada/geo-seo-claude) | MIT | GEO/SEO site audits and client reporting; `geo-update` (self-updating installer skill) intentionally excluded; `geo-technical` categories modularized under `references/`. |
+## Skills from BagelHole/DevOps-Security-Agent-Skills: compliance (19) — issue126-devsec-compliance
+
+Compliance batch of [FrancoStino/opencode-skills-collection#126](https://github.com/FrancoStino/opencode-skills-collection/issues/126) from [DevOps-Security-Agent-Skills](https://github.com/BagelHole/DevOps-Security-Agent-Skills) (MIT): governance, frameworks (SOC2/ISO27001/PCI-DSS/HIPAA/GDPR/FedRAMP), continuity, and auditing guidance. All `risk: safe`. Docs-only import: helper scripts and templates not bundled.
 
 ## License Policy
 
