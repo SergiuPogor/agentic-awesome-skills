@@ -208,6 +208,9 @@ The following 83 skills were adapted from [Claude-BugHunter](https://github.com/
 | :---- | :-------------- | :------ | :---- |
 | 5 process skills (`report-writing`, `redteam-report-template`, `bugcrowd-reporting`, `evidence-hygiene`, `mid-engagement-ir-detection` — reporting, evidence handling, detection notes) | [elementalsouls/Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) | MIT | Process guidance, no active probing; `risk: safe`. |
 
+## Skills from BagelHole/DevOps-Security-Agent-Skills: devops (39) — issue126-devsec-devops
+
+DevOps batch of [FrancoStino/opencode-skills-collection#126](https://github.com/FrancoStino/opencode-skills-collection/issues/126) from [DevOps-Security-Agent-Skills](https://github.com/BagelHole/DevOps-Security-Agent-Skills) (MIT): CI/CD, orchestration (Kubernetes/Helm/Kustomize/ArgoCD/OpenShift), observability (Prometheus/OTel/SRE), release practices, containers, and AI workload operations. All `risk: critical` (guidance executes against real environments). Docs-only import: helper scripts and templates not bundled.
 
 ## License Policy
 
