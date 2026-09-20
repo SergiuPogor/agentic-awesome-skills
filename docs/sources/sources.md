@@ -181,6 +181,17 @@ The following 7 skills were adapted from [yylo-skills](https://github.com/yylo-d
 | :---- | :-------------- | :------ | :---- |
 | `ledger-tasks-yylo`, `plan-ledger-tasks-yylo`, `ralph-loop-yylo`, `understand-project-yylo`, `wiki-yylo`, `workflow-yylo`, `artifact-yylo` | [yylo-dev/yylo-skills](https://github.com/yylo-dev/yylo-skills) | MIT | Kanban ledger lifecycle, PDR planning, Ralph single-task execution loop, project understanding, wiki/workflow/artifact records; adapted with upstream frontmatter, When to Use/Limitations, and fail-closed safety boundaries. |
 
+## Skills from issue #126, batch 1 (addyosmani + adhd + career-ops + geo-seo) — issue126-batch1
+
+The following 19 skills were adapted for [FrancoStino/opencode-skills-collection#126](https://github.com/FrancoStino/opencode-skills-collection/issues/126). Docs-only imports: upstream helper scripts, runtimes, agents, hooks, and templates are intentionally not bundled.
+
+| Skill | Original Source | License | Notes |
+| :---- | :-------------- | :------ | :---- |
+| `constraint-driven-development`, `interview-me`, `using-agent-skills` | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) | MIT | New names only; 22/25 upstream names in this repo were already sourced from this repository. |
+| `i-have-adhd` | [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) | MIT | ADHD-friendly output shaping (`/i-have-adhd` toggle). |
+| `career-ops` | [career-ops-hq/career-ops](https://github.com/career-ops-hq/career-ops) | MIT | Multi-CLI job-search command center; Node runtime not bundled. |
+| `geo-audit`, `geo-brand-mentions`, `geo-citability`, `geo-compare`, `geo-content`, `geo-crawlers`, `geo-llmstxt`, `geo-platform-optimizer`, `geo-proposal`, `geo-prospect`, `geo-report`, `geo-report-pdf`, `geo-schema`, `geo-technical` | [zubair-trabzada/geo-seo-claude](https://github.com/zubair-trabzada/geo-seo-claude) | MIT | GEO/SEO site audits and client reporting; `geo-update` (self-updating installer skill) intentionally excluded; `geo-technical` categories modularized under `references/`. |
+
 ## License Policy
 
 - **Code**: All original code in this repository is **MIT**.
