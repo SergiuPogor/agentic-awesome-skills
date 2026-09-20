@@ -200,6 +200,14 @@ Security batch of [FrancoStino/opencode-skills-collection#126](https://github.co
 ## Skills from BagelHole/DevOps-Security-Agent-Skills: infrastructure (70) — issue126-devsec-infrastructure
 
 Infrastructure batch of [FrancoStino/opencode-skills-collection#126](https://github.com/FrancoStino/opencode-skills-collection/issues/126) from [DevOps-Security-Agent-Skills](https://github.com/BagelHole/DevOps-Security-Agent-Skills) (MIT): servers, storage, databases (incl. `postgresql-devsec`, renamed — `postgresql` already exists in the catalog), networking, cloud (AWS/Azure/GCP), and local-AI infrastructure. All `risk: critical` (guidance mutates infrastructure state). Docs-only import: helper scripts and templates not bundled. `azure-functions` renamed to `azure-functions-devsec` (`azure-functions` already exists in the catalog).
+## Skills from elementalsouls/Claude-BugHunter — issue126-bughunter
+
+The following 83 skills were adapted from [Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) (MIT) for [FrancoStino/opencode-skills-collection#126](https://github.com/FrancoStino/opencode-skills-collection/issues/126) — bug-bounty and external red-team workflows across 24 vulnerability classes plus identity/infrastructure attack matrices. Docs-only import: helper scripts, slash commands, engine, and research assets are intentionally not bundled.
+
+| Skill | Original Source | License | Notes |
+| :---- | :-------------- | :------ | :---- |
+| 5 process skills (`report-writing`, `redteam-report-template`, `bugcrowd-reporting`, `evidence-hygiene`, `mid-engagement-ir-detection` — reporting, evidence handling, detection notes) | [elementalsouls/Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) | MIT | Process guidance, no active probing; `risk: safe`. |
+
 
 ## License Policy
 
