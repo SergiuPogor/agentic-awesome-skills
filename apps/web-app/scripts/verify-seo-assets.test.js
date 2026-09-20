@@ -387,7 +387,7 @@ describe('seo assets verification helpers', () => {
     });
     writeRouteIdentityFixture(distDir, routeUrl, buildRouteIdentityHtml({ routeUrl, jsonLd: missingPackage }));
     expect(() => assertPrerenderedRouteIdentities([routeUrl], distDir, '/repo', FIXTURE_ROOT_URL)).toThrow(
-      'exactly the current social, npm package, and catalog identities',
+      'SoftwareSourceCode JSON-LD sameAs must contain exactly the current route, catalog root, and npm package identities',
     );
   });
 
