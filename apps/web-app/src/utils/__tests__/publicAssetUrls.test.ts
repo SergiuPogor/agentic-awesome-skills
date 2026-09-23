@@ -12,17 +12,17 @@ describe('public asset URL helpers', () => {
     expect(
       getSkillsIndexCandidateUrls({
         baseUrl: '/',
-        origin: 'https://aaskills.me',
+        origin: 'https://aaskills.tech',
         pathname: '/skill/some-id',
-        documentBaseUrl: 'https://aaskills.me/',
+        documentBaseUrl: 'https://aaskills.tech/',
       }),
     ).toEqual([
-      'https://aaskills.me/skills.json',
-      'https://aaskills.me/skills.json.backup',
-      'https://aaskills.me/skill/skills.json',
-      'https://aaskills.me/skill/skills.json.backup',
-      'https://aaskills.me/skill/some-id/skills.json',
-      'https://aaskills.me/skill/some-id/skills.json.backup',
+      'https://aaskills.tech/skills.json',
+      'https://aaskills.tech/skills.json.backup',
+      'https://aaskills.tech/skill/skills.json',
+      'https://aaskills.tech/skill/skills.json.backup',
+      'https://aaskills.tech/skill/some-id/skills.json',
+      'https://aaskills.tech/skill/some-id/skills.json.backup',
     ]);
   });
 
