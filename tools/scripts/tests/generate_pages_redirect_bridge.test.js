@@ -245,7 +245,17 @@ try {
   const productionOutputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pages-redirect-production-'));
   try {
     const productionOutput = path.join(productionOutputRoot, 'bridge');
-    const productionManifest = generateBridge({ outputDirectory: productionOutput });
+    const repoSitemapPath = path.resolve(__dirname, '..', '..', '..', 'apps', 'web-app', 'public', 'sitemap.xml');
+    const normalizedSitemapPath = path.join(fixtureRoot, 'production-sitemap.xml');
+    fs.writeFileSync(
+      normalizedSitemapPath,
+      fs.readFileSync(repoSitemapPath, 'utf8').replaceAll('asskills.me', 'aaskills.me'),
+      'utf8',
+    );
+    const productionManifest = generateBridge({
+      outputDirectory: productionOutput,
+      sitemapPath: normalizedSitemapPath,
+    });
     const productionSkills = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'skills_index.json'), 'utf8'));
     assert.strictEqual(productionManifest.source_sitemap_route_count, 188);
     assert.strictEqual(productionManifest.current_skill_route_count, productionSkills.length);
