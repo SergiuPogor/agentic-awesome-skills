@@ -317,6 +317,7 @@ Key source families include:
 
 ### Community Contributors
 
+- **[ASCIT31/darkmoon-mcp-server](https://github.com/ASCIT31/darkmoon-mcp-server)**: GPL-3.0 source for the `darkmoon-pentest` skill — authorized autonomous pentest runs, status polling and findings triage on a self-hosted Darkmoon Pro instance through its MCP server.
 - **[alapha888/session-handoff-kit](https://github.com/alapha888/session-handoff-kit)**: MIT source for the `session-handoff` skill — structured handoff artifact for the next session, for use when context approaches capacity, before /clear or /compact, when switching tasks, or when ending a coding session.
 - **[FlowLLM-AI/AxonX](https://github.com/FlowLLM-AI/AxonX)**: Apache-2.0 source for `axonx` — quantitative research plugin development, task execution, and artifact/lineage inspection through CLI and MCP.
 - **[supercorp-ai/supercov](https://github.com/supercorp-ai/supercov)**: MIT source for the `supercov` skill — line, branch and MC/DC coverage of a project's existing tests, used to write focused tests for the untested code.
