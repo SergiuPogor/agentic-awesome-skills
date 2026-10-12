@@ -333,6 +333,7 @@ Key source families include:
 ### Community Contributors
 
 - **[Kadajett/cockney](https://github.com/Kadajett/cockney)**: MIT source for the `cockney` skill - terse Cockney-voiced replies and the smallest correct change (reuse, stdlib before dependencies, no speculative abstraction), switching to plain English for security and destructive-action warnings.
+- **[estevecastells/awesome-copilot](https://github.com/estevecastells/awesome-copilot)**: MIT source for the `invokely-statistics` skill - find official statistical figures, series, comparisons and place rankings through the Invokely MCP server, and report each value with its period, unit and source citation. The originating contribution is open and unmerged upstream.
 - **[morluto/rea](https://github.com/morluto/rea)**: MIT source for the `reverse-engineer-anything` skill - evidence-led native, managed, JavaScript/Electron, packaged, and browser investigations with explicit provider limits.
 
 - **[stas4000/what-could-break](https://github.com/stas4000/what-could-break)**: MIT source for the `what-could-break` skill - find what a change breaks outside its own diff and prove the one fact that makes it safe by running real code. Includes material adapted from pstack by Lauren Tan (MIT).
