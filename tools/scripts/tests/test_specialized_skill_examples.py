@@ -1,4 +1,7 @@
 """Execute the repaired pure examples without SDKs, network or model downloads."""
+import subprocess
+import sys
+import tempfile
 import ast
 import re
 import sqlite3
@@ -77,6 +80,37 @@ class Examples(unittest.TestCase):
         self.assertEqual(db.execute(queries['retention']).fetchall(), [(0,13,2,50.0)])
         self.assertEqual(db.execute(queries['cac']).fetchall(), [(0,100.0,2,50.0),(1,20.0,0,None)])
         self.assertEqual(db.execute(queries['growth']).fetchall(), [(0,0.0,None),(1,100.0,None),(2,150.0,50.0)])
+
+    def test_llm_agreement_ranges_and_zero_baseline_regression(self):
+        source = (ROOT / 'skills/llm-evaluation/SKILL.md').read_text()
+        definitions = []
+        for block in re.findall(r'```python\n(.*?)```', source, re.S):
+            definitions.extend(node for node in ast.parse(block).body
+                               if isinstance(node, (ast.FunctionDef, ast.ClassDef))
+                               and node.name in {'calculate_agreement', 'RegressionDetector'})
+        namespace = {}
+        exec(compile(ast.Module(body=definitions, type_ignores=[]), '<reviewed-evaluation-examples>', 'exec'), namespace)
+        for value, expected in [(-0.1, 'Poor'), (0.1, 'Slight'), (0.3, 'Fair'),
+                                (0.5, 'Moderate'), (0.7, 'Substantial'),
+                                (1.0, 'Almost Perfect'), (float('nan'), 'Undefined')]:
+            namespace['cohen_kappa_score'] = lambda a, b, result=value: result
+            self.assertEqual(namespace['calculate_agreement']([], [])['interpretation'], expected)
+        detector = namespace['RegressionDetector']({'accuracy': 0.0})
+        with self.assertRaisesRegex(ValueError, 'nonzero baseline'):
+            detector.check_for_regression({'accuracy': 0.1})
+        detector = namespace['RegressionDetector']({'accuracy': 0.8})
+        self.assertTrue(detector.check_for_regression({'accuracy': 0.6})['has_regression'])
+
+    def test_fullstack_skeletons_never_report_a_successful_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ['code_quality_analyzer', 'fullstack_scaffolder', 'project_scaffolder']:
+                script = ROOT / 'skills/senior-fullstack/scripts' / f'{name}.py'
+                result = subprocess.run([sys.executable, str(script), '.', '--json'],
+                                        cwd=directory, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('unimplemented skeleton', result.stdout)
+                self.assertNotIn('Completed successfully', result.stdout)
+                self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_slo_alerts_do_not_reference_missing_recording_rules(self):
         source = (ROOT / 'skills/slo-implementation/SKILL.md').read_text()
