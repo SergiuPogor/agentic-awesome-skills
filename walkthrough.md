@@ -1,3 +1,9 @@
+## Full-catalog review: second 175-tree cohort (October 14, 2026)
+
+Individually reviewed 175 additional canonical skill trees against the original 2,689-tree report, including unchanged entries and their bundled files. Corrected examples, triggers, safety and permission boundaries, and unsupported claims; recovered missing Deep Research, Imagen and OSINT resources with immutable provenance and licenses. See the [cohort receipt](docs/maintainers/full-catalog-large-batch-02-2026-10-14.md) and its JSON file for every disposition and file fingerprint.
+
+Validation/generation, references, documentation security, the 0/0 warning budget and all 148 unsharded local test groups passed. Network/provider and native integration limitations are explicit; protected CI and semantic review remain pending. This source-only PR excludes generated distribution state. Further review and merging are paused after PR creation at the user’s request.
+
 ## TypeScript contributor integration (October 14, 2026)
 
 Reviewed the complete five-file TypeScript skill tree and Wen Castillo’s diagnostic regression test from PR #1930. Its exact changes are preserved in owner-authored PR #1931 because the external-fork execution gate refuses Python support/test paths. No policy was weakened; the five targeted tests pass. Final exact-head full CI remains mandatory.
